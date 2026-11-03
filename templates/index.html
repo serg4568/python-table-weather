@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <title>Прогноз погоды</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/weather-icons/2.0.12/css/weather-icons.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/qweather-icons@1.8.0/font/qweather-icons.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --font-size-base: 15px;
+            --font-size-small: 13px;
+        }
+
+        body {
+            font-size: var(--font-size-base);
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            min-width: 900px;          /* заставляем горизонтальную прокрутку */
+        }
+
+        th, td {
+            border: 1px solid #d1d5db;
+            padding: 8px 6px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background-color: #e5e7eb;
+            font-size: var(--font-size-small);
+        }
+
+        td {
+            font-size: var(--font-size-small);
+        }
+
+        .weather-icon {
+            font-size: 26px;
+            line-height: 1;
+        }
+
+        .wind-arrow {
+            width: 20px;
+            height: 20px;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        #weatherTableContainer {
+            max-height: 60vh;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            border: 2px solid #d1d5db;
+            border-radius: 1px;
+            background: white;
+        }
+
+        @media (max-width: 640px) {
+            :root {
+                --font-size-base: 14px;
+                --font-size-small: 12px;
+            }
+            th, td {
+                padding: 6px 4px;
+            }
+            .weather-icon {
+                font-size: 20px;
+            }
+            .wind-arrow {
+                width: 16px;
+                height: 16px;
+            }
+            button, input, select {
+                font-size: 15px !important;
+                padding: 10px !important;
+            }
+        }
+        #weatherTable {
+            table-layout: fixed;           /* ← самое важное */
+            min-width: auto;              /* вместо 900px → сильно уже */
+            width: auto;
+        }
+
+        #weatherTable th,
+        #weatherTable td {
+            padding: 4px 5px !important;   /* было 8×6 → стало 4×5 */
+            font-size: 11px !important;    /* или 10px, если очень нужно */
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen pb-8">
+
+<div class="container mx-auto px-3 sm:px-4 pt-4 max-w-7xl">
+
+    <!-- Панель управления -->
+    <div class="bg-white p-4 sm:p-5 rounded-xl shadow mb-1 flex flex-col gap-4">
+
+        <div class="flex flex-col sm:flex-row gap-4">
+            <div class="flex-1">
+                <label class="block text-sm font-medium mb-1.5">Город:</label>
+                <input id="cityInput" type="text" placeholder="Например: Минск" class="w-full p-3 border rounded-lg text-base"/>
+            </div>
+
+            <div class="flex-1">
+                <label class="block text-sm font-medium mb-1.5">Или выбрать:</label>
+                <select id="citySelect" class="w-full p-3 border rounded-lg text-base">
+                    <option value="">— Выберите город —</option>
+                    {% for city in default_cities %}
+                    <option value="{{ city.name }}" data-lat="{{ city.lat }}" data-lon="{{ city.lon }}">
+                        {{ city.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-sm font-medium mb-1.5">Модель:</label>
+                <select id="model" class="w-full p-3 border rounded-lg text-base">
+                    <option value="best_match" >Лучшая для региона</option>
+                    <option value="gfs_seamless" selected>GFS (US)</option>
+                    <option value="icon_global">ICON Global (DE)</option>
+                    <option value="icon_eu">ICON Europe</option>
+                    <option value="ecmwf_ifs025">ECMWF (EU)</option>
+                    <option value="ecmwf_ifs">ECMWF IFS (EU)</option>
+                    <option value="ecmwf_aifs025_single">ECMWF AIFS(EU)</option>
+                    <option value="geosphere_seamless">GEOSPHERE(AU)</option>
+                    <option value="chmi_aladin_seamless">ALADIN(CZ)</option>   
+                    <option value="metno_seamless">MET NO(NO)</option>
+                    <option value="knmi_harmonie_arome_europe">HARMONIE EU(NL)</option>                                        
+                    <option value="gem_seamless">GEM (CA)</option>                    
+                    <option value="ukmo_seamless">UKMO(UK)</option>                    
+                    <option value="meteofrance_seamless">METEOFR(FR)</option>
+                    <option value="jma_seamless">JMA(JP)</option>                   
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1.5">Шаг:</label>
+                <select id="resolution" class="w-full p-3 border rounded-lg text-base">
+                    <option value="hourly_3" selected>3 часа</option>
+                    <option value="hourly_1">1 час</option>
+                </select>
+            </div>
+
+            <div class="col-span-2 sm:col-span-1 flex items-end">
+                <button id="getWeatherBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg text-base shadow-md">
+                    Показать прогноз
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Информация -->
+    <div id="locationInfo" class="text-lg sm:text-xl font-semibold mb-0 text-center sm:text-left"></div>
+    <div id="modelRunInfo" class="text-sm text-gray-600 font-semibold mb-0 text-center sm:text-left"></div>   
+
+    <!-- Таблица -->
+    <div id="weatherTableContainer">
+        <table id="weatherTable">
+            <thead>
+            <tr class="bg-gray-200 text-xs sm:text-sm">
+                <th>Дт</th>
+                <th>T2М</th>
+                <th>T850</th>
+                <th>Prec</th>
+                <th>Wi</th>
+                <th>PW</th>
+                <th>W10</th>
+                <th>W850</th>
+                <th>W500</th>
+                <th>SN_D</th>
+                <th>CAPE</th>
+                <th>LI</th>
+                <th>CDS %</th>
+                <th>RH %</th>
+                <th>Press</th>
+            </tr>
+            </thead>
+            <tbody id="weatherBody" class="text-xs sm:text-sm"></tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+// ---------------------- Иконки (QWeather) ----------------------
+const weatherIcons = {
+    0:   'qi-100', 1: 'qi-102', 2: 'qi-101', 3: 'qi-104',
+    45:  'qi-2003', 48: 'qi-2218',
+    51:  'qi-309', 53: 'qi-311', 55: 'qi-312',
+    56: 'qi-2214', 57:'qi-2301',
+    61:  'qi-305', 63: 'qi-306', 65: 'qi-308',
+    71:  'qi-400', 73: 'qi-401', 75: 'qi-403',
+    77: 'qi-2151',
+    80:  'qi-300', 81: 'qi-301', 82: 'qi-301',
+    85: 'qi-407', 86:'qi-408',
+    95:  'qi-302', 96: 'qi-304', 99: 'qi-2076',
+};
+
+function getWeatherIcon(code) {
+    const icon = weatherIcons[code] || 'qi-100';
+    return `<i class="qi ${icon} weather-icon"></i>`;
+}
+
+function getWindDirectionArrow(deg) {
+    if (deg == null) return '-';
+    const normalized = (deg + 180) % 360;
+    return `<svg class="wind-arrow" viewBox="0 0 20 20">
+        <path d="M10 2 L10 18 M10 2 L6 6 M10 2 L14 6"
+              stroke="currentColor" stroke-width="2.5" fill="none"
+              transform="rotate(${normalized},10,10)"/>
+    </svg>`;
+}
+
+function getTemperatureColor(t) {
+    if (t==null) return 'text-gray-950';
+    if (t <= -40) return 'text-fuchsia-900 bg-fuchsia-600 font-semibold';
+    if (t <= -30) return ' text-fuchsia-500 bg-fuchsia-200 font-semibold';
+    if (t <= -20) return ' text-purple-500 bg-purple-200 font-semibold';
+    if (t <= -15) return ' text-violet-500 bg-violet-200 font-semibold';
+    if (t <= -10)  return ' text-blue-500 bg-blue-200 font-semibold';
+    if (t <= -5)  return ' text-cyan-500 bg-cyan-200 font-semibold';
+    if (t <= 0)    return ' text-teal-500 bg-teal-200 font-semibold';
+    if (t < 5)    return ' text-emerald-500 bg-emerald-200 font-semibold';
+    if (t < 10)    return ' text-green-500 bg-green-200 font-semibold';
+    if (t < 15)   return ' text-lime-500 bg-lime-200 font-semibold';
+    if (t < 20)   return ' text-yellow-400 bg-yellow-200 font-semibold';
+    if (t < 25)   return ' text-amber-500 bg-amber-200 font-semibold';
+    if (t < 30)   return ' text-red-600 bg-red-200 font-semibold';
+    if (t <= 40)   return ' text-pink-800 bg-pink-200 font-semibold';
+    if (t > 40)   return ' text-olive-500 bg-olive-300 font-semibold';
+    return 'bg-red-100 text-red-800';
+}
+function getTemp850Color(temp) {
+            if (temp == null) return 'text-gray-600';
+            if (temp < -20) return 'bg-fuchsia-200 text-fuchsia-700';
+            if (temp < -10) return 'bg-purple-200 text-purple-700';
+            if (temp < 0) return 'bg-cyan-200 text-cyan-400';
+            if (temp < 5) return 'bg-emerald-100 text-emerald-500';
+            if (temp < 10) return 'bg-green-100 text-green-500';
+            if (temp < 12.5) return 'bg-lime-100 text-lime-500';
+            if (temp < 15) return 'bg-yellow-100 text-yellow-500';
+            if (temp < 19.9) return 'bg-red-100 text-red-600';
+            if (temp < 25) return 'bg-pink-200 text-pink-700';
+            if (temp < 40) return 'bg-gray-200 text-gray-400';
+            if (temp < 60) return 'bg-stone-300 text-stone-500';
+            return 'bg-red-100 text-red-700';
+        }
+
+function getPrecipColor(p) {
+    if (!p || p <= 0) return '';
+    if (p < 0.5)  return 'bg-blue-50 text-blue-700 font-semibold';
+    if (p < 1)  return 'bg-teal-50 text-teal-700 font-semibold';
+    if (p < 3)  return 'bg-lime-50 text-lime-700 font-semibold';
+    if (p < 6)  return 'bg-yellow-50 text-yellow-700 font-semibold';
+    if (p < 12) return 'bg-orange-100 text-orange-800 font-semibold';
+    if (p < 18) return 'bg-red-100 text-red-800 font-semibold';
+    return 'bg-rose-100 text-rose-800 font-semibold';
+}
+function getWindSpeedColor(wind) {
+            if (wind < 10) return 'text-green-600';
+            if (wind < 20) return 'text-green-700';
+            if (wind < 30) return 'text-green-800';
+            if (wind < 50) return 'text-orange-800';
+            if (wind < 200) return 'text-fuchsia-700';
+            return 'text-gray-950';
+        }
+    function getPressColor(press) {
+            if (press < 948) return 'text[#ff33ff]';
+            if (press < 956) return 'text[#a117a1]';
+            if (press < 964) return 'text[#2d226b]';
+            if (press < 981) return 'text[#4a80be]';
+            
+            if (press < 30) return 'text-green-800';
+            if (press < 50) return 'text-orange-800';
+            if (press < 200) return 'text-fuchsia-700';
+            return 'text-green-900';
+        }
+    function getHumidityColor(humidity) {
+            if (humidity < 40) return 'bg-yellow-100 text-yellow-700';
+            if (humidity < 60) return 'bg-yellow-50 text-yellow-600';
+            if (humidity < 80) return 'bg-blue-50 text-blue-600';
+            return 'bg-blue-100 text-blue-700';
+        }
+        function getCAPEColor(cape) {
+            if (cape == 0) return 'text-gray-400';
+            if (cape < 500) return 'bg-gray-100 text-gray-500';
+            if (cape < 1000) return 'bg-lime-200 text-lime-500';
+            if (cape < 1500) return 'bg-yellow-100 text-yellow-500';
+            if (cape < 2000) return 'bg-orange-200 text-orange-500';
+            if (cape < 3000) return 'bg-pink-100 text-pink-700';
+            if (cape < 3500) return 'bg-red-300 text-red-800';
+            if (cape < 10000) return 'bg-fuchsia-100 text-fuchsia-800';
+            return 'text-gray-500';
+        }
+        function PWATColor(pwat) {
+            if (pwat < 13) return 'bg-olive-100 text-olive-400';
+            if (pwat < 25) return 'bg-green-100 text-green-400';
+            if (pwat < 37) return 'bg-blue-100 text-blue-400';
+            if (pwat < 50) return 'bg-violet-100 text-violet-400';
+            if (pwat < 63) return 'bg-fuchsia-100 text-fuchsia-400';
+            if (pwat >= 63) return 'bg-rose-100 text-rose-400';
+            return 'text-gray-400';
+            
+        }
+
+		function getLIColor(li) {
+            if (li < -10) return 'bg-rose-100 text-rose-600';
+            if (li < -8) return 'bg-violet-100 text-violet-600';
+            if (li < -6) return 'bg-red-100 text-red-600';
+            if (li < -4) return 'bg-amber-100 text-amber-600';
+            if (li < -2) return 'bg-cyan-100 text-cyan-600';
+            if (li < 0) return 'bg-stone-100 text-stone-600';
+            if (li >= 0) return 'text-gray-400';            
+            return 'text-gray-400';
+        }
+    function getCloudColor(cloud) {
+            if (cloud < 10) return '';
+            if (cloud < 20) return 'bg-gray-50';
+            if (cloud < 40) return 'bg-gray-100';
+            if (cloud < 60) return 'bg-gray-200';
+            if (cloud < 80) return 'bg-gray-300';
+            if (cloud <= 100) return 'bg-gray-400';
+            return 'bg-blue-100 text-blue-700';
+        }
+    
+
+// ---------------------- Запрос ----------------------
+async function fetchWeather() {
+    const cityInput = document.getElementById('cityInput').value.trim();
+    const select = document.getElementById('citySelect');
+    const selected = select.options[select.selectedIndex];
+    const model = document.getElementById('model').value;
+    const resolution = document.getElementById('resolution').value;    
+
+    let cityName = cityInput || selected.value;
+    let lat = selected.dataset.lat;
+    let lon = selected.dataset.lon;
+
+    if (!cityName) {
+        alert("Введите или выберите город");
+        return;
+    }
+
+    const payload = {
+        city: cityName,
+        model: model,
+        resolution,
+        
+    };
+
+    if (lat && lon) {
+        payload.lat = parseFloat(lat);
+        payload.lon = parseFloat(lon);
+    }
+
+    try {
+        const resp = await fetch('/get_weather', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+        const data = await resp.json();
+
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+
+        document.getElementById('locationInfo').textContent = data.location;
+        document.getElementById('modelRunInfo').textContent = data.updstr;
+            
+
+        const tbody = document.getElementById('weatherBody');
+        tbody.innerHTML = '';
+
+
+        data.data.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-50 active:bg-gray-100';
+
+            const windHtml = row.wind10 != null
+                ? `${row.wind10} ${getWindDirectionArrow(row.wind_dir10)}`
+                : '-';
+            const wind850 = row.wind850 != null
+                ? `${row.wind850} ${getWindDirectionArrow(row.wind_dir850)}`
+                : '-';
+            const wind500 = row.wind500 != null
+                ? `${row.wind500} ${getWindDirectionArrow(row.wind_dir500)}`
+                : '-';
+
+            tr.innerHTML = `
+                <td>${row.date}</td>                
+                <td class="${getTemperatureColor(row.temp)}">${row.temp ?? '-'}</td>
+                <td class="${getTemp850Color(row.temp850)}">${row.temp850 ?? '-'}</td>
+                <td class="${getPrecipColor(row.precip)}">${row.precip ?? '-'}</td>
+                <td>${getWeatherIcon(row.weathercode)}</td>
+                <td class="${PWATColor(row.pwat)}">${row.pwat ?? '-'}</td>
+                <td class="${getWindSpeedColor(row.wind10)}">${windHtml}</td>
+                <td class="${getWindSpeedColor(row.wind850)}">${wind850}</td>
+                <td class="${getWindSpeedColor(row.wind500)}">${wind500}</td>
+                <td>${row.snow_d}</td>
+                <td class="${getCAPEColor(row.cape)}">${row.cape ?? '-'}</td>
+                <td class="${getLIColor(row.li)}">${row.li ?? '-'}</td>
+                <td class="${getCloudColor(row.cloud_cover)}">${row.cloud_cover ?? '-'}</td>
+                <td class="${getHumidityColor(row.rh)}">${row.rh ?? '-'}</td>
+                <td>${row.pressure ?? '-'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+    } catch (err) {
+        alert('Ошибка: ' + err.message);
+    }
+}
+
+// События
+document.getElementById('getWeatherBtn').onclick = fetchWeather;
+
+document.getElementById('citySelect').onchange = function() {
+    if (this.value) {
+        document.getElementById('cityInput').value = this.options[this.selectedIndex].text;
+    }
+};
+
+document.getElementById('cityInput').onkeypress = e => {
+    if (e.key === 'Enter') fetchWeather();
+};
+</script>
+</body>
+</html>
